@@ -1,0 +1,24 @@
+          OOOOO
+        OO     OO
+       O         O
+      O           O
+      O           O
+       O         O
+        OO     OO
+          OOOOO
+            X
+            X
+      O O O O O O O
+    O       O       O
+   O        O        O
+  O         O         O
+ O          O          O
+            O
+            O
+            X
+           O O
+          O   O
+         O     O
+        O       O
+       O         O
+      O           O
