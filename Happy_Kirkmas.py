@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 import random
 import tkinter as tk
+from tkinter import messagebox
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,8 +29,6 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
-FIGURE_FILE = Path("figure.txt")
 
 SUCCESS_MESSAGE = "Good Shooting!"
 
@@ -59,6 +58,26 @@ SPECIAL_COLOR = "#ffaa5f"
 # Set to True while creating/testing figure files.
 DEBUG_SHOW_TARGETS = False
 DEBUG_TARGET_COLOR = "red"
+
+
+import sys
+
+def get_application_directory() -> Path:
+    """
+    Return the directory containing the executable or Python script.
+
+    When packaged as an executable, sys.executable points to the .exe.
+    During normal Python execution, use the directory containing this file.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+
+    return Path(__file__).resolve().parent
+
+
+APPLICATION_DIRECTORY = get_application_directory()
+
+FIGURE_FILE = APPLICATION_DIRECTORY / "stick_figure.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -98,10 +117,15 @@ def load_text_figure(
     """
     if not file_path.exists():
         raise FileNotFoundError(
-            f"Figure file not found: {file_path.resolve()}"
+            "\n"
+            "Could not find stick_figure.txt.\n\n"
+            f"Expected location:\n{file_path}\n\n"
+            "Place stick_figure.txt in the same folder as the executable."
         )
 
-    lines = file_path.read_text(encoding="utf-8").splitlines()
+    lines = file_path.read_text(
+        encoding="utf-8"
+    ).splitlines()
 
     points: list[FigurePoint] = []
 
@@ -126,16 +150,18 @@ def load_text_figure(
 
     if not points:
         raise ValueError(
-            f"{file_path} does not contain any O, X, or T characters."
+            "stick_figure.txt does not contain any "
+            "O, X, or T characters."
         )
 
     if not any(point.is_target for point in points):
         raise ValueError(
-            f"{file_path} does not contain any targets. "
+            "stick_figure.txt does not contain a target. "
             "Add at least one X."
         )
 
     return center_figure(points)
+
 
 def center_figure(
     points: list[FigurePoint],
@@ -608,24 +634,28 @@ class CursorTrainer:
 
 def main() -> None:
     """Load the configured figure and start the trainer."""
-    figure_points = load_text_figure(
-        FIGURE_FILE
-    )
+    try:
+        figure_points = load_text_figure(
+            FIGURE_FILE
+        )
 
-    target_count = sum(
-        point.is_target
-        for point in figure_points
-    )
+        CursorTrainer(
+            figure_points
+        ).run()
 
-    print(
-        f"Loaded {len(figure_points)} points "
-        f"with {target_count} targets."
-    )
+    except (FileNotFoundError, ValueError) as error:
+        root = tk.Tk()
+        root.withdraw()
 
-    CursorTrainer(
-        figure_points
-    ).run()
+        messagebox.showerror(
+            "Cursor Trainer Error",
+            str(error),
+        )
+
+        root.destroy()
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()
