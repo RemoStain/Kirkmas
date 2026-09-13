@@ -1,0 +1,23 @@
+          TTT
+        TT   TT
+       T       T
+       T       T
+       T       T
+        TT   TT
+          TTT
+           X
+           X
+     O O O O O O O
+   O       O       O
+  O        O        O
+ O         O         O
+O          O          O
+           O
+           O
+           X
+          O O
+         O   O
+        O     O
+       O       O
+      O         O
+     O           O
