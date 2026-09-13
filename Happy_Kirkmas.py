@@ -31,7 +31,7 @@ from pathlib import Path
 
 FIGURE_FILE = Path("figure.txt")
 
-SUCCESS_MESSAGE = "Merry Kirkmas!"
+SUCCESS_MESSAGE = "Good Shooting!"
 
 # Distance, in pixels, between characters in the text file.
 POINT_SPACING = 12
@@ -53,6 +53,8 @@ RESPAWN_DELAY_MS = 1500
 # Transparent overlay configuration.
 TRANSPARENT_COLOR = "#010101"
 DOT_COLOR = "white"
+TARGET_COLOR = "red"
+SPECIAL_COLOR = "#ffaa5f"
 
 # Set to True while creating/testing figure files.
 DEBUG_SHOW_TARGETS = False
@@ -69,7 +71,12 @@ class FigurePoint:
 
     x: float
     y: float
-    is_target: bool = False
+    point_type: str = "normal"
+
+    @property
+    def is_target(self) -> bool:
+        """Return whether this point is a clickable target."""
+        return self.point_type == "target"
 
 
 # ---------------------------------------------------------------------------
@@ -86,24 +93,8 @@ def load_text_figure(
     Supported characters:
         O = normal point
         X = target point
+        T = specially coloured point
           = empty space
-
-    Args:
-        file_path:
-            Text file containing the figure.
-
-        spacing:
-            Pixel distance between character positions.
-
-    Returns:
-        A centered list of FigurePoint objects.
-
-    Raises:
-        FileNotFoundError:
-            If the figure file does not exist.
-
-        ValueError:
-            If the figure contains no points or no targets.
     """
     if not file_path.exists():
         raise FileNotFoundError(
@@ -114,22 +105,28 @@ def load_text_figure(
 
     points: list[FigurePoint] = []
 
+    point_types = {
+        "O": "normal",
+        "X": "target",
+        "T": "special",
+    }
+
     for row, line in enumerate(lines):
         for column, character in enumerate(line):
-            if character not in {"O", "X"}:
+            if character not in point_types:
                 continue
 
             points.append(
                 FigurePoint(
-                    x=column * (spacing / 2),
+                    x=column * spacing,
                     y=row * spacing,
-                    is_target=character == "X",
+                    point_type=point_types[character],
                 )
             )
 
     if not points:
         raise ValueError(
-            f"{file_path} does not contain any O or X characters."
+            f"{file_path} does not contain any O, X, or T characters."
         )
 
     if not any(point.is_target for point in points):
@@ -139,7 +136,6 @@ def load_text_figure(
         )
 
     return center_figure(points)
-
 
 def center_figure(
     points: list[FigurePoint],
@@ -158,11 +154,10 @@ def center_figure(
         FigurePoint(
             x=point.x - center_x,
             y=point.y - center_y,
-            is_target=point.is_target,
+            point_type=point.point_type,
         )
         for point in points
     ]
-
 
 def get_figure_size(
     points: list[FigurePoint],
@@ -346,12 +341,12 @@ class CursorTrainer:
                     )
                 )
 
-            color = DOT_COLOR
+            if point.point_type == "special":
+                color = SPECIAL_COLOR
+            else:
+                color = DOT_COLOR
 
-            if (
-                DEBUG_SHOW_TARGETS
-                and point.is_target
-            ):
+            if DEBUG_SHOW_TARGETS and point.is_target:
                 color = DEBUG_TARGET_COLOR
 
             self.draw_dot(

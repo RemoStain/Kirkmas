@@ -1,24 +1,23 @@
-          OOOOO
-        OO     OO
-       O         O
-      O           O
-      O           O
-       O         O
-        OO     OO
-          OOOOO
-            X
-            X
-      O O O O O O O
-    O       O       O
-   O        O        O
-  O         O         O
- O          O          O
-            O
-            O
-            X
-           O O
-          O   O
-         O     O
-        O       O
-       O         O
-      O           O
+          TTT
+        TT   TT
+       T       T
+       T       T
+       T       T
+        TT   TT
+          TTT
+           X
+           X
+     O O O O O O O
+   O       O       O
+  O        O        O
+ O         O         O
+O          O          O
+           O
+           O
+           X
+          O O
+         O   O
+        O     O
+       O       O
+      O         O
+     O           O
