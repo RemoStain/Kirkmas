@@ -1,48 +1,3 @@
-"""
-Desktop cursor-accuracy trainer.
-
-The program displays a figure made from dots on a transparent desktop
-overlay. Figures are loaded from ``stick_figure.txt`` located beside the
-script or packaged executable.
-
-File format
------------
-Line 1:
-    Success message displayed after clicking a target.
-
-Line 2:
-    Hex colour used for special ``T`` dots.
-
-Line 3 onward:
-    Figure definition.
-
-Figure characters
------------------
-O
-    Normal white dot.
-
-X
-    Target dot. It looks like a normal dot unless target debugging is
-    enabled.
-
-T
-    Special dot rendered using the hex colour from line 2.
-
-Space
-    Empty space.
-
-Controls
---------
-R
-    Interrupt the current figure lifecycle and immediately respawn.
-
-Esc
-    Exit the application.
-
-The system tray menu can also enable or disable the trainer, reload the
-figure file, respawn the figure, or exit the application.
-"""
-
 from __future__ import annotations
 
 import math
@@ -72,12 +27,13 @@ TARGET_HIT_RADIUS_SQUARED = TARGET_HIT_RADIUS**2
 
 SCREEN_MARGIN = 100
 
-CELEBRATION_PARTICLE_COUNT = 24
+CELEBRATION_PARTICLE_COUNT = 35
 CELEBRATION_DURATION_MS = 1_200
 RESPAWN_DELAY_MS = 1_500
 
 # Approximately 30 FPS.
-ANIMATION_FRAME_MS = 33
+# smaller is higher fps
+ANIMATION_FRAME_MS = 10
 
 # Tray actions do not need frame-rate-level polling.
 TRAY_QUEUE_CHECK_MS = 100
@@ -87,6 +43,15 @@ DOT_COLOR = "white"
 
 DEBUG_SHOW_TARGETS = False
 DEBUG_TARGET_COLOR = "red"
+
+# all lowercase when checked.  the actual message will be unchanged
+KIRK_MESSAGES = [
+    "happy kirkmas!",
+    "counting or not counting gang violence?",
+    "i can't stand the word empathy",
+    "boy, i hope he's qualified.",
+    "leave any bigotry in your quarters, there's no room for it on the bridge."
+]
 
 
 # ---------------------------------------------------------------------------
@@ -173,18 +138,13 @@ def is_valid_hex_color(value: str) -> bool:
     if len(value) != 7 or not value.startswith("#"):
         return False
 
-    return all(
-        character in "0123456789abcdefABCDEF"
-        for character in value[1:]
-    )
+    return all(character in "0123456789abcdefABCDEF" for character in value[1:])
 
 
 def get_figure_source(file_path: Path) -> list[str]:
     """Return figure-definition lines from disk or the built-in fallback."""
     if file_path.exists():
-        return file_path.read_text(
-            encoding="utf-8"
-        ).splitlines()
+        return file_path.read_text(encoding="utf-8").splitlines()
 
     return DEFAULT_FIGURE.strip("\n").splitlines()
 
@@ -232,11 +192,7 @@ def get_target_coordinates(
     points: tuple[FigurePoint, ...],
 ) -> tuple[tuple[float, float], ...]:
     """Return relative coordinates for every target in ``points``."""
-    return tuple(
-        (point.x, point.y)
-        for point in points
-        if point.is_target
-    )
+    return tuple((point.x, point.y) for point in points if point.is_target)
 
 
 def load_text_figure(
@@ -277,9 +233,7 @@ def load_text_figure(
     figure_lines = lines[2:]
 
     if not message:
-        raise ValueError(
-            "The first line must contain a success message."
-        )
+        raise ValueError("The first line must contain a success message.")
 
     if not is_valid_hex_color(special_color):
         raise ValueError(
@@ -288,9 +242,9 @@ def load_text_figure(
         )
 
     point_types = {
-        "O": "normal",
-        "X": "target",
-        "T": "special",
+        "O": "normal",  # O was first
+        "X": "target",  # X was second
+        "T": "special",  # T is for Tone? idk it was originally for Trump orange but now its just left over
     }
 
     points: list[FigurePoint] = []
@@ -311,24 +265,16 @@ def load_text_figure(
             )
 
     if not points:
-        raise ValueError(
-            "The figure must contain at least one O, X, or T."
-        )
+        raise ValueError("The figure must contain at least one O, X, or T.")
 
     if not any(point.is_target for point in points):
-        raise ValueError(
-            "The figure must contain at least one X target."
-        )
+        raise ValueError("The figure must contain at least one X target.")
 
     centered_points = center_figure(points)
 
-    width, height = get_figure_size(
-        centered_points
-    )
+    width, height = get_figure_size(centered_points)
 
-    targets = get_target_coordinates(
-        centered_points
-    )
+    targets = get_target_coordinates(centered_points)
 
     return FigureDefinition(
         message=message,
@@ -345,6 +291,7 @@ def load_text_figure(
 # ---------------------------------------------------------------------------
 
 
+# I cribbed a lot of this part from my gravity sim code
 def create_tray_image() -> Image.Image:
     """Create a simple stick-figure image for the system tray."""
     size = 64
@@ -395,7 +342,7 @@ def create_tray_image() -> Image.Image:
 
 
 class CursorTrainer:
-    """Run the desktop cursor-accuracy trainer."""
+    """Run the desktop turning point simulation ."""
 
     def __init__(
         self,
@@ -415,16 +362,12 @@ class CursorTrainer:
             True,
         )
 
-        self.root.configure(
-            bg=TRANSPARENT_COLOR
-        )
+        self.root.configure(bg=TRANSPARENT_COLOR)
 
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
 
-        self.root.geometry(
-            f"{self.screen_width}x{self.screen_height}+0+0"
-        )
+        self.root.geometry(f"{self.screen_width}x{self.screen_height}+0+0")
 
         self.root.wm_attributes(
             "-transparentcolor",
@@ -449,10 +392,7 @@ class CursorTrainer:
             self.screen_height / 2,
         )
 
-        self.target_positions: tuple[
-            tuple[float, float],
-            ...
-        ] = ()
+        self.target_positions: tuple[tuple[float, float], ...] = ()
 
         self.celebration_job: str | None = None
         self.respawn_job: str | None = None
@@ -460,9 +400,7 @@ class CursorTrainer:
 
         self.tray_icon = None
 
-        self.tray_actions: queue.Queue[
-            Callable[[], None]
-        ] = queue.Queue()
+        self.tray_actions: queue.Queue[Callable[[], None]] = queue.Queue()
 
         self.root.bind(
             "<Escape>",
@@ -499,25 +437,13 @@ class CursorTrainer:
         half_width = self.figure.width / 2
         half_height = self.figure.height / 2
 
-        min_x = int(
-            SCREEN_MARGIN + half_width
-        )
+        min_x = int(SCREEN_MARGIN + half_width)
 
-        max_x = int(
-            self.screen_width
-            - SCREEN_MARGIN
-            - half_width
-        )
+        max_x = int(self.screen_width - SCREEN_MARGIN - half_width)
 
-        min_y = int(
-            SCREEN_MARGIN + half_height
-        )
+        min_y = int(SCREEN_MARGIN + half_height)
 
-        max_y = int(
-            self.screen_height
-            - SCREEN_MARGIN
-            - half_height
-        )
+        max_y = int(self.screen_height - SCREEN_MARGIN - half_height)
 
         origin_x = (
             self.screen_width / 2
@@ -626,10 +552,7 @@ class CursorTrainer:
             dx = click_x - target_x
             dy = click_y - target_y
 
-            distance_squared = (
-                dx * dx
-                + dy * dy
-            )
+            distance_squared = dx * dx + dy * dy
 
             if distance_squared <= closest_distance_squared:
                 closest_target = (
@@ -682,6 +605,7 @@ class CursorTrainer:
             y,
         )
 
+        # Might change the font to something silly later
         self.canvas.create_text(
             x,
             y - 60,
@@ -699,6 +623,15 @@ class CursorTrainer:
             elapsed_ms=0,
         )
 
+    # FUTURE UPGRADE: Scale the celebration based on how many dots there are,
+    # so the animation doesn't slow the computer if the dot count is super high
+
+    # FUTURE UPGRADE: Make the figure "crumple" from the shot.
+    # Or maybe have the dots act like springs under tension and the target dot is removed, and the "springs" flail around
+    # if I implement this, it NEEDS to ba as computationally light as possible.
+
+    # THIS ONE IS DONE
+    # FUTURE UPGRADE: Make the dots red if its a kirk figure.
     def create_celebration_particles(
         self,
         x: float,
@@ -707,27 +640,31 @@ class CursorTrainer:
         """Create animated celebration particles around ``(x, y)``."""
         particles: list[Particle] = []
 
-        colors = (
-            "white",
-            "yellow",
-            "cyan",
-            "magenta",
-            "lime",
-            "orange",
-        )
+        if (self.figure.message).lower() in KIRK_MESSAGES:
+            colors = ("red",)
+        else:
+            # Do I want more variations in the colours?
+            colors = (
+                "white",
+                "yellow",
+                "cyan",
+                "magenta",
+                "lime",
+                "orange",
+            )
 
-        for _ in range(
-            CELEBRATION_PARTICLE_COUNT
-        ):
+        for _ in range(CELEBRATION_PARTICLE_COUNT):
+            # This is where it spawns (around the given point)
             angle = random.uniform(
                 0,
                 math.tau,
             )
+            # This is initial speed of particle
             speed = random.uniform(
                 2.0,
                 8.0,
             )
-
+            # This is how far it away spawns (from the given point)
             radius = random.randint(
                 2,
                 5,
@@ -742,8 +679,6 @@ class CursorTrainer:
                 outline="",
             )
 
-            # Import-free equivalents of cos/sin are not desirable here,
-            # so calculate using the standard math module locally.
             from math import cos, sin
 
             particles.append(
@@ -756,6 +691,7 @@ class CursorTrainer:
 
         return particles
 
+    # FUTURE UPDATE: Change gravity to be stronger, or at least more realistic.
     def animate_celebration(
         self,
         particles: list[Particle],
@@ -785,7 +721,9 @@ class CursorTrainer:
                 particle.dy,
             )
 
-            particle.dy += 0.12
+            # Technically this is the gravity, I should probably make it use a config constant instead of hard-coded
+            # was += 0.12, *= 0.99
+            particle.dy += 0.20
             particle.dx *= 0.99
 
         self.celebration_job = self.root.after(
@@ -799,11 +737,13 @@ class CursorTrainer:
     # Enable / disable
     # ------------------------------------------------------------------
 
+    # maybe make this more buttony?
+    # or add a checkbox to click for better UI?
     def set_enabled(
         self,
         enabled: bool,
     ) -> None:
-        """Set whether the trainer is active."""
+        """Set whether the simulation is active."""
         if self.closing or self.enabled == enabled:
             return
 
@@ -829,10 +769,8 @@ class CursorTrainer:
         self.update_tray_menu()
 
     def toggle_enabled(self) -> None:
-        """Toggle the trainer's enabled state."""
-        self.set_enabled(
-            not self.enabled
-        )
+        """Toggle the simulation's enabled state."""
+        self.set_enabled(not self.enabled)
 
     # ------------------------------------------------------------------
     # Figure reload
@@ -844,9 +782,7 @@ class CursorTrainer:
             return
 
         try:
-            new_figure = load_text_figure(
-                FIGURE_FILE
-            )
+            new_figure = load_text_figure(FIGURE_FILE)
 
         except (
             OSError,
@@ -887,13 +823,9 @@ class CursorTrainer:
 
     def cancel_pending_jobs(self) -> None:
         """Cancel celebration and delayed-respawn callbacks."""
-        self.celebration_job = self.cancel_job(
-            self.celebration_job
-        )
+        self.celebration_job = self.cancel_job(self.celebration_job)
 
-        self.respawn_job = self.cancel_job(
-            self.respawn_job
-        )
+        self.respawn_job = self.cancel_job(self.respawn_job)
 
     def cancel_job(
         self,
@@ -917,9 +849,9 @@ class CursorTrainer:
     def start_tray_icon(self) -> None:
         """Create the system tray icon on a daemon thread."""
         self.tray_icon = pystray.Icon(
-            "cursor_accuracy_trainer",
+            "turning_point_simulator",
             create_tray_image(),
-            "Cursor Accuracy Trainer",
+            "Turning Point Simulator",
             self.create_tray_menu(),
         )
 
@@ -994,9 +926,7 @@ class CursorTrainer:
         _item,
     ) -> None:
         """Queue an enabled-state toggle from the tray."""
-        self.queue_tray_action(
-            self.toggle_enabled
-        )
+        self.queue_tray_action(self.toggle_enabled)
 
     def tray_reload_figure(
         self,
@@ -1004,9 +934,7 @@ class CursorTrainer:
         _item,
     ) -> None:
         """Queue a figure reload from the tray."""
-        self.queue_tray_action(
-            self.reload_figure
-        )
+        self.queue_tray_action(self.reload_figure)
 
     def tray_respawn(
         self,
@@ -1014,9 +942,7 @@ class CursorTrainer:
         _item,
     ) -> None:
         """Queue an immediate respawn from the tray."""
-        self.queue_tray_action(
-            self.respawn
-        )
+        self.queue_tray_action(self.respawn)
 
     def tray_exit(
         self,
@@ -1024,9 +950,7 @@ class CursorTrainer:
         _item,
     ) -> None:
         """Queue application shutdown from the tray."""
-        self.queue_tray_action(
-            self.close
-        )
+        self.queue_tray_action(self.close)
 
     def update_tray_menu(self) -> None:
         """Refresh dynamic tray-menu state."""
@@ -1080,9 +1004,7 @@ class CursorTrainer:
 
         if self.tray_poll_job is not None:
             try:
-                self.root.after_cancel(
-                    self.tray_poll_job
-                )
+                self.root.after_cancel(self.tray_poll_job)
             except tk.TclError:
                 pass
 
@@ -1115,7 +1037,7 @@ def show_startup_error(
     root.withdraw()
 
     messagebox.showerror(
-        "Cursor Accuracy Trainer",
+        "Turning Point Simulator",
         str(error),
         parent=root,
     )
@@ -1129,11 +1051,9 @@ def show_startup_error(
 
 
 def main() -> None:
-    """Load the configured figure and start the trainer."""
+    """Load the configured figure and start the simulation."""
     try:
-        figure = load_text_figure(
-            FIGURE_FILE
-        )
+        figure = load_text_figure(FIGURE_FILE)
 
     except (
         OSError,
@@ -1142,9 +1062,7 @@ def main() -> None:
         show_startup_error(error)
         return
 
-    CursorTrainer(
-        figure
-    ).run()
+    CursorTrainer(figure).run()
 
 
 if __name__ == "__main__":
