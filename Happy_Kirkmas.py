@@ -5,11 +5,14 @@ import queue
 import random
 import sys
 import threading
+
 import tkinter as tk
+from tkinter import messagebox
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import messagebox
+
 
 import pystray
 from PIL import Image, ImageDraw
@@ -19,14 +22,19 @@ from PIL import Image, ImageDraw
 # Configuration
 # ---------------------------------------------------------------------------
 
+# The distance between points in the figure, in pixels.
 POINT_SPACING = 12
 
+# The radius of each dot in the figure, in pixels.
 DOT_RADIUS = 4
 TARGET_HIT_RADIUS = 8
+# The squared hit radius is used for distance comparisons to avoid unnecessary square root calculations.
 TARGET_HIT_RADIUS_SQUARED = TARGET_HIT_RADIUS**2
 
-SCREEN_MARGIN = 100
+# The margin from the screen edges to ensure the figure is fully visible.
+SCREEN_MARGIN = 250
 
+# Celebration animation parameters
 CELEBRATION_PARTICLE_COUNT = 35
 CELEBRATION_DURATION_MS = 1_200
 RESPAWN_DELAY_MS = 1_500
@@ -38,9 +46,11 @@ ANIMATION_FRAME_MS = 10
 # Tray actions do not need frame-rate-level polling.
 TRAY_QUEUE_CHECK_MS = 100
 
-TRANSPARENT_COLOR = "#010101"
+# Colors
+TRANSPARENT_COLOR = "#010101"       # #010101 is used as a transparent color for the overlay window.
 DOT_COLOR = "white"
 
+# Debugging options
 DEBUG_SHOW_TARGETS = False
 DEBUG_TARGET_COLOR = "red"
 
@@ -50,7 +60,7 @@ KIRK_MESSAGES = [
     "counting or not counting gang violence?",
     "i can't stand the word empathy",
     "boy, i hope he's qualified.",
-    "leave any bigotry in your quarters, there's no room for it on the bridge."
+    "leave any bigotry in your quarters, there's no room for it on the bridge.",
 ]
 
 
@@ -77,7 +87,12 @@ OOOOO      T      XXXXX   OOOOO  O     O
 
 
 def get_application_directory() -> Path:
-    """Return the directory containing the script or packaged executable."""
+    """
+    Return the directory containing the script or packaged executable.
+
+    Returns:
+        A Path object representing the application directory.
+    """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
 
@@ -93,6 +108,7 @@ FIGURE_FILE = APPLICATION_DIRECTORY / "stick_figure.txt"
 # ---------------------------------------------------------------------------
 
 
+# This is a frozen dataclass because the figure points are immutable once loaded.
 @dataclass(frozen=True, slots=True)
 class FigurePoint:
     """Represent one immutable point in a figure."""
@@ -103,10 +119,17 @@ class FigurePoint:
 
     @property
     def is_target(self) -> bool:
-        """Return whether this point is a clickable target."""
+        """
+        Return whether this point is a clickable target.
+
+        Returns:
+            True if the point is a target, False otherwise.
+        """
         return self.point_type == "target"
 
 
+# This is a frozen dataclass because the figure definition is immutable once loaded.
+# Reloading a new figure definition replaces the entire object, rather than modifying it in place.
 @dataclass(frozen=True, slots=True)
 class FigureDefinition:
     """Store a fully processed, immutable figure definition."""
@@ -119,6 +142,7 @@ class FigureDefinition:
     height: float
 
 
+# This is a mutable object because the particles move around during the celebration animation.
 @dataclass(slots=True)
 class Particle:
     """Represent one mutable celebration particle."""
@@ -134,7 +158,15 @@ class Particle:
 
 
 def is_valid_hex_color(value: str) -> bool:
-    """Return whether ``value`` is a valid ``#RRGGBB`` colour."""
+    """
+    Return whether a value is a valid #RRGGBB colour.
+
+    Args:
+        value: The string to validate.
+
+    Returns:
+        True if value is a valid hex color, False otherwise.
+    """
     if len(value) != 7 or not value.startswith("#"):
         return False
 
@@ -142,7 +174,15 @@ def is_valid_hex_color(value: str) -> bool:
 
 
 def get_figure_source(file_path: Path) -> list[str]:
-    """Return figure-definition lines from disk or the built-in fallback."""
+    """
+    Return figure-definition lines from disk or the built-in fallback.
+
+    Args:
+        file_path: The path to the figure definition file.
+
+    Returns:
+        A list of strings representing the lines of the figure definition.
+    """
     if file_path.exists():
         return file_path.read_text(encoding="utf-8").splitlines()
 
@@ -152,7 +192,15 @@ def get_figure_source(file_path: Path) -> list[str]:
 def center_figure(
     points: list[FigurePoint],
 ) -> tuple[FigurePoint, ...]:
-    """Return ``points`` centered around coordinate ``(0, 0)``."""
+    """
+    Return a new tuple of points, centered around (0, 0).
+
+    Args:
+        points: A list of FigurePoint objects representing the figure.
+
+    Returns:
+        A tuple of FigurePoint objects, centered around (0, 0).
+    """
     min_x = min(point.x for point in points)
     max_x = max(point.x for point in points)
 
@@ -175,7 +223,15 @@ def center_figure(
 def get_figure_size(
     points: tuple[FigurePoint, ...],
 ) -> tuple[float, float]:
-    """Return the width and height occupied by ``points``."""
+    """
+    Return the width and height occupied by points.
+
+    Args:
+        points: A tuple of FigurePoint objects representing the figure.
+
+    Returns:
+        A tuple of (width, height) representing the size of the figure.
+    """
     min_x = min(point.x for point in points)
     max_x = max(point.x for point in points)
 
@@ -191,7 +247,16 @@ def get_figure_size(
 def get_target_coordinates(
     points: tuple[FigurePoint, ...],
 ) -> tuple[tuple[float, float], ...]:
-    """Return relative coordinates for every target in ``points``."""
+    """
+    Return a tuple of (x, y) coordinates for all target points.
+
+    Args:
+        points: A tuple of FigurePoint objects representing the figure.
+
+    Returns:
+        A tuple of (x, y) coordinates for all target points in the figure.
+    """
+
     return tuple((point.x, point.y) for point in points if point.is_target)
 
 
@@ -199,22 +264,23 @@ def load_text_figure(
     file_path: Path,
     spacing: int = POINT_SPACING,
 ) -> FigureDefinition:
-    """Load, validate, center, and preprocess a complete figure.
+    """
+    Load a figure definition from a text file.
+    The file must contain at least three lines:
+        a success message,
+        a special-dot hex colour,
+        and the figure definition.
 
     Args:
-        file_path:
-            Path to ``stick_figure.txt``.
-
-        spacing:
-            Pixel distance represented by one character position.
+        file_path: The path to the text file containing the figure definition.
+        spacing: The distance between points in the figure.
 
     Returns:
-        A fully processed immutable figure definition.
+        A FigureDefinition object containing the loaded figure.
 
     Raises:
         OSError:
-            If an existing figure file cannot be read.
-
+            If the file cannot be read.
         ValueError:
             If the figure definition is malformed.
     """
@@ -293,7 +359,12 @@ def load_text_figure(
 
 # I cribbed a lot of this part from my gravity sim code
 def create_tray_image() -> Image.Image:
-    """Create a simple stick-figure image for the system tray."""
+    """
+    Create a simple stick-figure image for the system tray.
+
+    Returns:
+        A PIL Image object representing the tray icon.
+    """
     size = 64
 
     image = Image.new(
@@ -349,32 +420,38 @@ class CursorTrainer:
         figure: FigureDefinition,
     ) -> None:
         """Initialize the desktop overlay and system tray."""
-        self.figure = figure
+        self.figure = figure  # The figure definition to display
 
-        self.enabled = True
-        self.closing = False
+        self.enabled = True  # Whether the simulation is currently active
+        self.closing = False  # Whether the application is shutting down
 
-        self.root = tk.Tk()
+        self.root = tk.Tk()  # The main Tkinter window for the overlay
 
-        self.root.overrideredirect(True)
+        self.root.overrideredirect(
+            True
+        )  # Remove window decorations (title bar, borders, etc.)
         self.root.attributes(
             "-topmost",
             True,
         )
 
-        self.root.configure(bg=TRANSPARENT_COLOR)
+        self.root.configure(
+            bg=TRANSPARENT_COLOR
+        )  # Set the background color to the transparent color for overlay effect
 
-        self.screen_width = self.root.winfo_screenwidth()
-        self.screen_height = self.root.winfo_screenheight()
+        self.screen_width = self.root.winfo_screenwidth()  # Get the screen width
+        self.screen_height = self.root.winfo_screenheight()  # Get the screen height
 
-        self.root.geometry(f"{self.screen_width}x{self.screen_height}+0+0")
+        self.root.geometry(
+            f"{self.screen_width}x{self.screen_height}+0+0"
+        )  # Set the window size to cover the entire screen
 
-        self.root.wm_attributes(
+        self.root.wm_attributes(  # Set window attributes for transparency
             "-transparentcolor",
             TRANSPARENT_COLOR,
         )
 
-        self.canvas = tk.Canvas(
+        self.canvas = tk.Canvas(  # Create a canvas for drawing the figure and particles
             self.root,
             width=self.screen_width,
             height=self.screen_height,
@@ -382,46 +459,57 @@ class CursorTrainer:
             highlightthickness=0,
         )
 
-        self.canvas.pack(
+        self.canvas.pack(  # Pack the canvas to fill the entire window
             fill="both",
             expand=True,
         )
 
-        self.figure_origin = (
+        self.figure_origin = (  # Store the current origin point of the figure, initialized to the center of the screen
             self.screen_width / 2,
             self.screen_height / 2,
         )
 
-        self.target_positions: tuple[tuple[float, float], ...] = ()
+        self.target_positions: tuple[
+            tuple[float, float], ...
+        ] = ()  # Store the absolute positions of the targets for click detection
 
-        self.celebration_job: str | None = None
-        self.respawn_job: str | None = None
-        self.tray_poll_job: str | None = None
+        self.celebration_job: str | None = (
+            None  # Store the identifier of the scheduled celebration animation job
+        )
+        self.respawn_job: str | None = (
+            None  # Store the identifier of the scheduled respawn job
+        )
+        self.tray_poll_job: str | None = (
+            None  # Store the identifier of the scheduled tray poll job
+        )
 
-        self.tray_icon = None
+        self.tray_icon = None  # Store the system tray icon object
 
-        self.tray_actions: queue.Queue[Callable[[], None]] = queue.Queue()
+        self.tray_actions: queue.Queue[Callable[[], None]] = (
+            queue.Queue()
+        )  # Queue for actions to be executed on the main thread
 
+        # Bind keyboard events for closing and respawning
         self.root.bind(
             "<Escape>",
             self.close,
         )
-
         self.root.bind(
             "<Key-r>",
             self.respawn,
         )
-
         self.root.bind(
             "<Key-R>",
             self.respawn,
         )
 
+        # Bind mouse click event for handling clicks on the canvas
         self.canvas.bind(
             "<Button-1>",
             self.handle_click,
         )
 
+        # Start the simulation
         self.spawn_figure()
         self.start_tray_icon()
         self.schedule_tray_poll()
@@ -433,7 +521,14 @@ class CursorTrainer:
     def choose_figure_origin(
         self,
     ) -> tuple[float, float]:
-        """Return a random origin that keeps the figure on screen."""
+        """
+        Return a random origin point for the figure, ensuring it is fully on-screen with a margin.
+
+        Returns:
+            A tuple of (origin_x, origin_y) coordinates for the figure's center.
+        """
+
+        # Calculate the half-width and half-height of the figure to ensure it fits within the screen bounds
         half_width = self.figure.width / 2
         half_height = self.figure.height / 2
 
@@ -445,6 +540,7 @@ class CursorTrainer:
 
         max_y = int(self.screen_height - SCREEN_MARGIN - half_height)
 
+        # If the figure is too large to fit within the x screen bounds, default to the center of the screen
         origin_x = (
             self.screen_width / 2
             if min_x >= max_x
@@ -454,6 +550,7 @@ class CursorTrainer:
             )
         )
 
+        # If the figure is too large to fit within the y screen bounds, default to the center of the screen
         origin_y = (
             self.screen_height / 2
             if min_y >= max_y
@@ -470,12 +567,16 @@ class CursorTrainer:
     # ------------------------------------------------------------------
 
     def spawn_figure(self) -> None:
-        """Clear the overlay and draw the figure at a random position."""
+        """
+        Clear the overlay and draw the figure at a random position.
+        """
         self.respawn_job = None
 
+        # If the simulation is disabled, don't draw anything
         if not self.enabled:
             return
 
+        # Clear the canvas before drawing the new figure
         self.clear_canvas()
 
         origin_x, origin_y = self.choose_figure_origin()
@@ -485,6 +586,7 @@ class CursorTrainer:
             origin_y,
         )
 
+        # Store the absolute positions of the targets for click detection
         self.target_positions = tuple(
             (
                 origin_x + target_x,
@@ -493,6 +595,7 @@ class CursorTrainer:
             for target_x, target_y in self.figure.targets
         )
 
+        # Draw each point of the figure on the canvas
         for point in self.figure.points:
             self.draw_dot(
                 origin_x + point.x,
@@ -504,7 +607,15 @@ class CursorTrainer:
         self,
         point: FigurePoint,
     ) -> str:
-        """Return the display colour for ``point``."""
+        """
+        Return the color to use for a given figure point, based on its type and debug settings.
+
+        Args:
+            point: The FigurePoint object to determine the color for.
+
+        Returns:
+            A string representing the color to use for the point.
+        """
         if DEBUG_SHOW_TARGETS and point.is_target:
             return DEBUG_TARGET_COLOR
 
@@ -519,7 +630,17 @@ class CursorTrainer:
         y: float,
         color: str,
     ) -> int:
-        """Draw one circular figure point and return its canvas ID."""
+        """
+        Draw a filled circle (dot) on the canvas at the specified coordinates with the given color.
+
+        Args:
+            x: The x-coordinate of the center of the dot.
+            y: The y-coordinate of the center of the dot.
+            color: The fill color of the dot.
+
+        Returns:
+            The ID of the created oval item on the canvas.
+        """
         return self.canvas.create_oval(
             x - DOT_RADIUS,
             y - DOT_RADIUS,
@@ -530,7 +651,9 @@ class CursorTrainer:
         )
 
     def clear_canvas(self) -> None:
-        """Remove everything currently displayed on the overlay."""
+        """
+        Remove everything currently displayed on the overlay.
+        """
         self.canvas.delete("all")
         self.target_positions = ()
 
@@ -542,9 +665,19 @@ class CursorTrainer:
         self,
         click_position: tuple[float, float],
     ) -> tuple[float, float] | None:
-        """Return the closest target hit by ``click_position``."""
+        """
+        Return the closest target to the click position, if within hit radius.
+
+        Args:
+            click_position: A tuple of (x, y) coordinates where the user clicked.
+
+        Returns:
+            A tuple of (target_x, target_y) coordinates of the closest target if hit, or None if no target was hit.
+        """
+
         click_x, click_y = click_position
 
+        # Find the closest target within the hit radius
         closest_target = None
         closest_distance_squared = TARGET_HIT_RADIUS_SQUARED
 
@@ -568,7 +701,14 @@ class CursorTrainer:
         self,
         event: tk.Event,
     ) -> None:
-        """Handle a mouse click and trigger success for a target hit."""
+        """
+        Handle a mouse click event on the canvas.
+
+        This method checks if the click was on a target and triggers the success celebration if so.
+
+        Args:
+            event: The Tkinter event object containing click coordinates.
+        """
         if not self.enabled:
             return
 
@@ -582,6 +722,7 @@ class CursorTrainer:
         if target is None:
             return
 
+        # If a target was clicked, trigger the success celebration at that target's coordinates
         self.success(
             target[0],
             target[1],
@@ -596,7 +737,14 @@ class CursorTrainer:
         x: float,
         y: float,
     ) -> None:
-        """Remove the figure and start the success celebration."""
+        """
+        Trigger the success celebration animation at the given coordinates.
+
+        Args:
+            x: The x-coordinate where the celebration should occur.
+            y: The y-coordinate where the celebration should occur.
+        """
+
         self.cancel_pending_jobs()
         self.clear_canvas()
 
@@ -626,20 +774,25 @@ class CursorTrainer:
     # FUTURE UPGRADE: Scale the celebration based on how many dots there are,
     # so the animation doesn't slow the computer if the dot count is super high
 
-    # FUTURE UPGRADE: Make the figure "crumple" from the shot.
-    # Or maybe have the dots act like springs under tension and the target dot is removed, and the "springs" flail around
-    # if I implement this, it NEEDS to ba as computationally light as possible.
-
-    # THIS ONE IS DONE
-    # FUTURE UPGRADE: Make the dots red if its a kirk figure.
     def create_celebration_particles(
         self,
         x: float,
         y: float,
     ) -> list[Particle]:
-        """Create animated celebration particles around ``(x, y)``."""
+        """
+        Create a list of celebration particles to animate.
+
+        Args:
+            x: The x-coordinate where the particles should originate.
+            y: The y-coordinate where the particles should originate.
+
+        Returns:
+            A list of Particle objects representing the celebration particles.
+        """
+
         particles: list[Particle] = []
 
+        # FUTURE UPDATE: Make the celebration colours configurable in stick_figure.txt
         if (self.figure.message).lower() in KIRK_MESSAGES:
             colors = ("red",)
         else:
@@ -691,13 +844,18 @@ class CursorTrainer:
 
         return particles
 
-    # FUTURE UPDATE: Change gravity to be stronger, or at least more realistic.
     def animate_celebration(
         self,
         particles: list[Particle],
         elapsed_ms: int,
     ) -> None:
-        """Advance the success animation by one frame."""
+        """
+        Animate the celebration particles over time.
+
+        Args:
+            particles: A list of Particle objects to animate.
+            elapsed_ms: The number of milliseconds that have elapsed since the celebration started.
+        """
         if not self.enabled:
             self.celebration_job = None
             return
@@ -743,7 +901,12 @@ class CursorTrainer:
         self,
         enabled: bool,
     ) -> None:
-        """Set whether the simulation is active."""
+        """
+        Enable or disable the simulation overlay.
+
+        Args:
+            enabled: A boolean indicating whether to enable (True) or disable (False) the simulation.
+        """
         if self.closing or self.enabled == enabled:
             return
 
@@ -777,7 +940,15 @@ class CursorTrainer:
     # ------------------------------------------------------------------
 
     def reload_figure(self) -> None:
-        """Reload and atomically replace the current figure definition."""
+        """
+        Reload and atomically replace the current figure definition.
+
+        Raises:
+            OSError:
+                If an existing figure file cannot be read.
+            ValueError:
+                If the figure definition is malformed.
+        """
         if self.closing:
             return
 
@@ -810,7 +981,12 @@ class CursorTrainer:
         self,
         _event: tk.Event | None = None,
     ) -> None:
-        """Interrupt the current lifecycle and immediately respawn."""
+        """
+        Interrupt the current lifecycle and immediately respawn.
+
+        Args:
+            _event: Optional Tkinter event object, ignored.
+        """
         if not self.enabled:
             return
 
@@ -822,7 +998,9 @@ class CursorTrainer:
     # ------------------------------------------------------------------
 
     def cancel_pending_jobs(self) -> None:
-        """Cancel celebration and delayed-respawn callbacks."""
+        """
+        Cancel celebration and delayed-respawn callbacks.
+        """
         self.celebration_job = self.cancel_job(self.celebration_job)
 
         self.respawn_job = self.cancel_job(self.respawn_job)
@@ -831,7 +1009,12 @@ class CursorTrainer:
         self,
         job: str | None,
     ) -> None:
-        """Cancel one Tkinter ``after`` job if it exists."""
+        """
+        Cancel a scheduled Tkinter callback if it exists.
+
+        Args:
+            job: The identifier of the scheduled callback to cancel.
+        """
         if job is None:
             return None
 
@@ -847,7 +1030,9 @@ class CursorTrainer:
     # ------------------------------------------------------------------
 
     def start_tray_icon(self) -> None:
-        """Create the system tray icon on a daemon thread."""
+        """
+        Create the system tray icon on a daemon thread.
+        """
         self.tray_icon = pystray.Icon(
             "turning_point_simulator",
             create_tray_image(),
@@ -862,7 +1047,9 @@ class CursorTrainer:
         ).start()
 
     def create_tray_menu(self):
-        """Return the system tray menu."""
+        """
+        Return the system tray menu.
+        """
         return pystray.Menu(
             pystray.MenuItem(
                 "Enabled",
@@ -889,12 +1076,16 @@ class CursorTrainer:
         self,
         action: Callable[[], None],
     ) -> None:
-        """Queue a tray action for Tkinter's main thread."""
+        """
+        Queue a tray action for Tkinter's main thread.
+        """
         if not self.closing:
             self.tray_actions.put(action)
 
     def schedule_tray_poll(self) -> None:
-        """Schedule the next check for queued tray actions."""
+        """
+        Schedule the next check for queued tray actions.
+        """
         if self.closing:
             return
 
@@ -904,7 +1095,9 @@ class CursorTrainer:
         )
 
     def process_tray_actions(self) -> None:
-        """Execute queued tray actions on Tkinter's main thread."""
+        """
+        Execute queued tray actions on Tkinter's main thread.
+        """
         self.tray_poll_job = None
 
         if self.closing:
@@ -925,7 +1118,9 @@ class CursorTrainer:
         _icon,
         _item,
     ) -> None:
-        """Queue an enabled-state toggle from the tray."""
+        """
+        Queue an enabled-state toggle from the tray.
+        """
         self.queue_tray_action(self.toggle_enabled)
 
     def tray_reload_figure(
@@ -933,7 +1128,9 @@ class CursorTrainer:
         _icon,
         _item,
     ) -> None:
-        """Queue a figure reload from the tray."""
+        """
+        Queue a figure reload from the tray.
+        """
         self.queue_tray_action(self.reload_figure)
 
     def tray_respawn(
@@ -941,7 +1138,9 @@ class CursorTrainer:
         _icon,
         _item,
     ) -> None:
-        """Queue an immediate respawn from the tray."""
+        """
+        Queue an immediate respawn from the tray.
+        """
         self.queue_tray_action(self.respawn)
 
     def tray_exit(
@@ -949,11 +1148,15 @@ class CursorTrainer:
         _icon,
         _item,
     ) -> None:
-        """Queue application shutdown from the tray."""
+        """
+        Queue application shutdown from the tray.
+        """
         self.queue_tray_action(self.close)
 
     def update_tray_menu(self) -> None:
-        """Refresh dynamic tray-menu state."""
+        """
+        Refresh dynamic tray-menu state.
+        """
         if self.tray_icon is None:
             return
 
@@ -971,7 +1174,14 @@ class CursorTrainer:
         title: str,
         text: str,
     ) -> None:
-        """Display an application error dialog."""
+        """
+        Display an error dialog, temporarily showing the overlay if it is hidden.
+
+        Args:
+            title: The title of the error dialog.
+            text: The message to display in the error dialog.
+        """
+
         was_hidden = not self.enabled
 
         if was_hidden:
@@ -994,7 +1204,12 @@ class CursorTrainer:
         self,
         _event: tk.Event | None = None,
     ) -> None:
-        """Stop pending work, close the tray icon, and exit."""
+        """
+        Stop pending work, close the tray icon, and exit.
+
+        Args:
+            _event: Optional Tkinter event object, ignored.
+        """
         if self.closing:
             return
 
@@ -1020,7 +1235,9 @@ class CursorTrainer:
             pass
 
     def run(self) -> None:
-        """Run the Tkinter event loop."""
+        """
+        Run the Tkinter event loop.
+        """
         self.root.mainloop()
 
 
@@ -1032,7 +1249,12 @@ class CursorTrainer:
 def show_startup_error(
     error: Exception,
 ) -> None:
-    """Display an error encountered before the application starts."""
+    """
+    Display an error encountered before the application starts.
+
+    Args:
+        error: The exception to display.
+    """
     root = tk.Tk()
     root.withdraw()
 
@@ -1051,7 +1273,15 @@ def show_startup_error(
 
 
 def main() -> None:
-    """Load the configured figure and start the simulation."""
+    """
+    Load the configured figure and start the simulation.
+
+    Raises:
+        OSError:
+            If an existing figure file cannot be read.
+        ValueError:
+            If the figure definition is malformed.
+    """
     try:
         figure = load_text_figure(FIGURE_FILE)
 
