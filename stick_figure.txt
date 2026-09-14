@@ -1,23 +1,25 @@
-          TTT
-        TT   TT
-       T       T
-       T       T
-       T       T
-        TT   TT
-          TTT
-           X
-           X
-     O O O O O O O
-   O       O       O
-  O        O        O
- O         O         O
-O          O          O
-           O
-           O
-           X
-          O O
-         O   O
-        O     O
-       O       O
-      O         O
-     O           O
+Good Shot!
+#f2c317
+       TTTTT
+      T     T
+     T       T
+     T       T
+     T       T
+      T     T
+       TTTTT
+         X
+         X
+     O O O O O
+   O     O     O
+  O      O      O
+ O       O       O
+O        O        O
+         O
+         O
+         X
+        O O
+       O   O
+      O     O
+     O       O
+    O         O
+   O           O
