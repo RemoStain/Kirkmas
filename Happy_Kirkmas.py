@@ -99,6 +99,16 @@ def get_application_directory() -> Path:
 
 
 def load_messages(file_path: Path) -> set:
+    """
+    Load messages from a text file, or use default messages if the file is missing or empty.
+
+    Args:
+        file_path: The path to the text file containing messages.
+
+    Returns:
+        A set of messages loaded from the file or default messages.
+    """
+    message_set: set = set()
     file_exists = file_path.exists()
 
     if file_exists:
@@ -111,11 +121,16 @@ def load_messages(file_path: Path) -> set:
 
     return message_set
 
+# ---------------------------------------------------------------------------
+# From Files
+# ---------------------------------------------------------------------------
 
 APPLICATION_DIRECTORY = get_application_directory()
 
 FIGURE_FILE = APPLICATION_DIRECTORY / "stick_figure.txt"
 KIRK_MESSAGES_FILE = APPLICATION_DIRECTORY / "kirk_messages.txt"
+
+# Load Kirk messages from the file or use default messages if the file is missing or empty.
 KIRK_MESSAGES = load_messages(KIRK_MESSAGES_FILE)  # this is a set
 
 
@@ -1008,6 +1023,12 @@ class CursorTrainer:
         self,
         _event: tk.Event | None = None,
     ) -> None:
+        """
+        Toggle the gore override state.
+
+        Args:
+            _event: Optional Tkinter event object, ignored.
+        """
         self.gore = not self.gore
         self.update_tray_menu()
 
@@ -1190,6 +1211,10 @@ class CursorTrainer:
     def update_tray_menu(self) -> None:
         """
         Refresh dynamic tray-menu state.
+
+        Raises:
+            RuntimeError:
+                If the tray icon has not been created yet.
         """
         if self.tray_icon is None:
             return
@@ -1243,6 +1268,10 @@ class CursorTrainer:
 
         Args:
             _event: Optional Tkinter event object, ignored.
+
+        Raises:
+            RuntimeError:
+                If the tray icon has not been created yet.
         """
         if self.closing:
             return
