@@ -1,12 +1,12 @@
-Good Shot!
+Counting or not counting gang violence?
 #f2c317
-       TTTTT
-      T     T
-     T       T
-     T       T
-     T       T
-      T     T
-       TTTTT
+       OOOOO
+      O     O
+     O       O
+     O       O
+     O       O
+      O     O
+       OOOOO
          X
          X
      O O O O O
@@ -16,10 +16,10 @@ Good Shot!
 O        O        O
          O
          O
-         X
+         O
         O O
        O   O
       O     O
      O       O
     O         O
-   O           O
+   O           X

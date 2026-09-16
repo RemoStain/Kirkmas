@@ -37,7 +37,7 @@ SCREEN_MARGIN = 250
 # Celebration animation parameters
 CELEBRATION_PARTICLE_COUNT = 35
 CELEBRATION_DURATION_MS = 1_200
-RESPAWN_DELAY_MS = 1_500
+RESPAWN_DELAY_MS = 1_000
 
 # Approximately 30 FPS.
 # smaller is higher fps
@@ -47,25 +47,18 @@ ANIMATION_FRAME_MS = 10
 TRAY_QUEUE_CHECK_MS = 100
 
 # Colors
-TRANSPARENT_COLOR = "#010101"       # #010101 is used as a transparent color for the overlay window.
+TRANSPARENT_COLOR = (
+    "#010101"  # #010101 is used as a transparent color for the overlay window.
+)
 DOT_COLOR = "white"
 
 # Debugging options
 DEBUG_SHOW_TARGETS = False
 DEBUG_TARGET_COLOR = "red"
 
-# all lowercase when checked.  the actual message will be unchanged
-KIRK_MESSAGES = [
-    "happy kirkmas!",
-    "counting or not counting gang violence?",
-    "i can't stand the word empathy",
-    "boy, i hope he's qualified.",
-    "leave any bigotry in your quarters, there's no room for it on the bridge.",
-]
-
 
 # ---------------------------------------------------------------------------
-# Built-in fallback figure
+# Built-in fallback
 # ---------------------------------------------------------------------------
 
 DEFAULT_FIGURE = """
@@ -80,6 +73,12 @@ OOOOO      T        X    O       OO
 OOOOO      T      XXXXX   OOOOO  O     O
 """
 
+
+DEFAULT_MESSAGES = [
+    "happy kirkmas!",
+    "counting or not counting gang violence?",
+    "leave any bigotry in your quarters, there's no room for it on the bridge.",
+]
 
 # ---------------------------------------------------------------------------
 # Application paths
@@ -99,8 +98,25 @@ def get_application_directory() -> Path:
     return Path(__file__).resolve().parent
 
 
+def load_messages(file_path: Path) -> set:
+    file_exists = file_path.exists()
+
+    if file_exists:
+        message_list_raw = file_path.read_text(encoding="utf-8").splitlines()
+        message_set = {message.casefold().strip() for message in message_list_raw}
+
+    elif len(message_set) < 1 or not file_exists:
+        for i in DEFAULT_MESSAGES:
+            message_set.add(i)
+
+    return message_set
+
+
 APPLICATION_DIRECTORY = get_application_directory()
+
 FIGURE_FILE = APPLICATION_DIRECTORY / "stick_figure.txt"
+KIRK_MESSAGES_FILE = APPLICATION_DIRECTORY / "kirk_messages.txt"
+KIRK_MESSAGES = load_messages(KIRK_MESSAGES_FILE)  # this is a set
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +439,7 @@ class CursorTrainer:
         self.figure = figure  # The figure definition to display
 
         self.enabled = True  # Whether the simulation is currently active
+        self.gore = False  # Whether the gore override is currently on
         self.closing = False  # Whether the application is shutting down
 
         self.root = tk.Tk()  # The main Tkinter window for the overlay
@@ -489,20 +506,6 @@ class CursorTrainer:
             queue.Queue()
         )  # Queue for actions to be executed on the main thread
 
-        # Bind keyboard events for closing and respawning
-        self.root.bind(
-            "<Escape>",
-            self.close,
-        )
-        self.root.bind(
-            "<Key-r>",
-            self.respawn,
-        )
-        self.root.bind(
-            "<Key-R>",
-            self.respawn,
-        )
-
         # Bind mouse click event for handling clicks on the canvas
         self.canvas.bind(
             "<Button-1>",
@@ -513,6 +516,15 @@ class CursorTrainer:
         self.spawn_figure()
         self.start_tray_icon()
         self.schedule_tray_poll()
+
+    def check_for_kirk(self):
+        if self.gore:
+            return True
+
+        if self.figure.message.lower() in KIRK_MESSAGES:
+            return True
+        else:
+            return False
 
     # ------------------------------------------------------------------
     # Figure positioning
@@ -792,8 +804,7 @@ class CursorTrainer:
 
         particles: list[Particle] = []
 
-        # FUTURE UPDATE: Make the celebration colours configurable in stick_figure.txt
-        if (self.figure.message).lower() in KIRK_MESSAGES:
+        if self.check_for_kirk():
             colors = ("red",)
         else:
             # Do I want more variations in the colours?
@@ -993,6 +1004,13 @@ class CursorTrainer:
         self.cancel_pending_jobs()
         self.spawn_figure()
 
+    def toggle_gore(
+        self,
+        _event: tk.Event | None = None,
+    ) -> None:
+        self.gore = not self.gore
+        self.update_tray_menu()
+
     # ------------------------------------------------------------------
     # Tkinter job management
     # ------------------------------------------------------------------
@@ -1064,6 +1082,12 @@ class CursorTrainer:
             pystray.MenuItem(
                 "Respawn",
                 self.tray_respawn,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Gore Override",
+                self.tray_toggle_gore,
+                checked=lambda _item: self.gore,
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -1142,6 +1166,16 @@ class CursorTrainer:
         Queue an immediate respawn from the tray.
         """
         self.queue_tray_action(self.respawn)
+
+    def tray_toggle_gore(
+        self,
+        _icon,
+        _item,
+    ) -> None:
+        """
+        Queue a change in the gore override.
+        """
+        self.queue_tray_action(self.toggle_gore)
 
     def tray_exit(
         self,
